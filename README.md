@@ -6,15 +6,21 @@ ni dependencias instaladas, ni servidor. Three.js se carga desde CDN con un impo
 ```
 ├── index.html              ← el hub (portada 3D + lista de juegos)
 ├── games/
-│   ├── cube-runner.html          ← propio del template
-│   ├── tower-stack.html          ← propio del template
+│   ├── cube-runner.html          ← propios de VÉRTICE
+│   ├── tower-stack.html
+│   ├── cruce-loco.html
+│   ├── fruta-loca.html
+│   ├── sumo-party.html
+│   ├── canasta-loca.html
 │   ├── olimpiadas-granja.html
 │   ├── porrazo-party.html
 │   ├── aura-battle.html
 │   ├── turbo-kart-rally.html
 │   ├── anguera-superstars.html
 │   ├── futbol-retro.html
-│   └── kings-league.html
+│   ├── kings-league.html
+│   ├── neon-coast.html
+│   └── turbo-stumblers.html
 ├── .nojekyll
 └── README.md
 ```
@@ -56,7 +62,8 @@ Dos pasos:
   title: 'Tu Juego',
   desc:  'Qué se hace, en una frase.',
   keys:  'Cómo se juega',
-  shape: 'runner',                      // runner | tower | farm | fight | dance | kart | ball | crown | orb
+  shape: 'runner',                      // runner tower farm fight dance kart ball crown
+                                        // cross fruit sumo hoop road flag orb
   color: 'var(--lime)'                  // color de la cabecera de la tarjeta
 }
 ```
@@ -129,6 +136,8 @@ que comparten con el hub es el botón de vuelta.
 | Aura Battle | no | pide horizontal |
 | Turbo Kart Rally | no | la mejor vuelta se pierde al recargar |
 | Fútbol Retro 7v7 | no | entra directo al partido, sin menú |
+| Neon Coast | no | conducción infinita, cinco paisajes |
+| Turbo Stumblers | no | ya usaba Fredoka |
 | Kings League Arcade | sí (ya lo traía) | 945 KB con Three.js dentro; usa marca y nombres reales |
 
 Añadir persistencia a los que no la tienen es el mismo patrón que en Olimpiadas:
@@ -139,3 +148,19 @@ leer de `localStorage` al arrancar y guardar cuando cambie el récord.
 Un juego llamado `index.html` en la raíz del repo sustituye a la portada del sitio.
 Kings League llegó así y por eso está guardado como `games/kings-league.html`.
 Regla simple: en `/games/` el nombre del archivo es el `slug`, y ninguno se llama `index`.
+
+## Los seis juegos propios
+
+`cube-runner`, `tower-stack`, `cruce-loco`, `fruta-loca`, `sumo-party` y
+`canasta-loca` comparten la misma base: sombreado toon con rampa de tres escalones,
+contorno por copia inflada, HUD de pastillas, panel con rebote, récord en
+`localStorage` y confeti. Los cuatro últimos se generan con un script a partir de
+una plantilla común, así que un cambio en el sistema visual se aplica a todos:
+
+```
+/home/claude/build_games.py     plantilla + Cruce Loco + Sumo Party
+/home/claude/build_games2.py    Canasta Loca + Fruta Loca
+```
+
+Ese script no viaja con el sitio: los HTML generados son autónomos y se editan
+directamente si solo quieres tocar uno.

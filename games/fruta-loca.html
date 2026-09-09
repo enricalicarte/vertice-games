@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Fruta Loca — VÉRTICE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--ink:#2B1A55;--cream:#FFF6E5;--lemon:#FFD53D;--gum:#FF4D9D;--lime:#3DE07A}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none}
+  body{background:linear-gradient(180deg,#5B3FD9 0%,#B44BD8 55%,#FF8A3D 100%);color:var(--ink);
+    font-family:Fredoka,"Trebuchet MS",sans-serif;font-weight:500;
+    -webkit-font-smoothing:antialiased;touch-action:none;user-select:none;}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+  .hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
+    align-items:flex-start;padding:16px 18px;pointer-events:none;gap:14px}
+  .chunk{background:var(--cream);border:5px solid var(--ink);border-radius:999px;
+    box-shadow:0 6px 0 var(--ink);padding:9px 20px;font-weight:700;font-size:17px}
+  .back{pointer-events:auto;text-decoration:none;color:var(--ink);transition:transform .1s,box-shadow .1s}
+  .back:hover{transform:translateY(3px);box-shadow:0 3px 0 var(--ink)}
+  .score{background:var(--lemon);font-size:clamp(1.4rem,5.2vw,2.1rem);padding:6px 24px 8px;
+    border-radius:26px;line-height:1.1;text-align:center;min-width:96px}
+  .best{display:block;font-size:.7rem;font-weight:600;opacity:.72;margin-top:-2px}
+
+  .panel{position:fixed;inset:0;display:grid;place-items:center;padding:22px;
+    background:rgba(43,26,85,.45);backdrop-filter:blur(4px)}
+  .panel[hidden]{display:none}
+  .card{background:var(--cream);border:7px solid var(--ink);border-radius:34px;
+    box-shadow:0 14px 0 var(--ink),0 30px 50px rgba(43,26,85,.45);
+    padding:32px 28px 28px;max-width:430px;width:100%;text-align:center;
+    animation:pop .45s cubic-bezier(.2,1.6,.4,1) both}
+  @keyframes pop{from{opacity:0;transform:scale(.75) translateY(24px)}to{opacity:1;transform:none}}
+  .card h1{isolation:isolate;margin:0 0 10px;font-size:clamp(1.9rem,7.5vw,2.8rem);
+    font-weight:700;line-height:.95;position:relative;color:var(--gum)}
+  .card h1::before{content:attr(data-text);position:absolute;inset:0;z-index:-1;
+    -webkit-text-stroke:10px var(--ink);color:transparent}
+  .result{font-size:1.12rem;font-weight:600;margin:0 0 12px}
+  .result b{font-size:1.4rem;color:var(--gum)}
+  .card p{margin:0 0 8px;font-size:1rem;font-weight:400;color:#5A4A80;line-height:1.45}
+  button{margin-top:18px;width:100%;padding:15px 20px 17px;font:inherit;font-weight:700;
+    font-size:1.3rem;color:var(--ink);background:var(--lime);border:6px solid var(--ink);
+    border-radius:999px;cursor:pointer;box-shadow:0 9px 0 #1E9E52;
+    transition:transform .1s,box-shadow .1s}
+  button:hover{transform:translateY(4px);box-shadow:0 5px 0 #1E9E52}
+  button:active{transform:translateY(9px);box-shadow:0 0 0 #1E9E52}
+  button:focus-visible{outline:5px solid var(--lemon);outline-offset:4px}
+  .lives{position:fixed;top:16px;left:50%;transform:translateX(-50%);
+    background:var(--cream);border:5px solid var(--ink);border-radius:999px;
+    box-shadow:0 6px 0 var(--ink);padding:7px 20px;font-size:1.25rem;letter-spacing:2px;
+    pointer-events:none}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div class="hud">
+  <a class="chunk back" href="../index.html">← Volver</a>
+  <div class="chunk score"><span id="score">0</span><span class="best" id="best"></span></div>
+</div>
+<div class="lives" id="lives">💛💛💛</div>
+
+<div class="panel" id="panel">
+  <div class="card">
+    <h1 id="ptitle" data-text="Fruta Loca">Fruta Loca</h1>
+    <p class="result" id="presult" hidden></p>
+    <p>Corta toda la fruta que salga volando. Si se te escapan tres, se acabó.</p>
+    <p>Las bombas moradas no se cortan: una y a casa. Arrastra el dedo o el ratón para cortar.</p>
+    <button id="play">¡Empezar!</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.164.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.164.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+/* ══ base común de VÉRTICE ══════════════════════════════════════════ */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(48, 1, .1, 400);
+scene.add(new THREE.HemisphereLight(0xFFFFFF, 0x7C5BD0, 2.5));
+const sun = new THREE.DirectionalLight(0xFFFFFF, 2.0);
+sun.position.set(6, 13, 8);
+scene.add(sun);
+
+/* rampa de tres escalones: sombreado plano, de dibujo animado */
+const steps = new Uint8Array([90, 90, 180, 180, 255, 255, 255, 255]);
+const ramp = new THREE.DataTexture(steps, steps.length, 1, THREE.RedFormat);
+ramp.minFilter = ramp.magFilter = THREE.NearestFilter;
+ramp.needsUpdate = true;
+
+const toon = c => new THREE.MeshToonMaterial({ color:c, gradientMap:ramp });
+const INK  = new THREE.MeshBasicMaterial({ color:0x2B1A55, side:THREE.BackSide });
+const CANDY = [0xFF4D9D, 0xFFD53D, 0x3DE07A, 0xFF8A3D, 0x9B5CFF, 0x3FB8FF];
+const rbox = (w,h,d,r=.2) =>
+  new RoundedBoxGeometry(w, h, d, 4, Math.max(.02, Math.min(r, w/2.1, h/2.1, d/2.1)));
+
+/* contorno: copia inflada del cuerpo, vista por dentro */
+function outlined(geo, color, t = 1.09, parent = scene) {
+  const g = new THREE.Group();
+  const skin = new THREE.Mesh(geo, toon(color));
+  const line = new THREE.Mesh(geo, INK);
+  line.scale.setScalar(t);
+  g.add(skin, line);
+  g.userData.skin = skin;
+  g.userData.line = line;
+  parent.add(g);
+  return g;
+}
+
+/* personaje rechoncho con ojos */
+const EYE_W = new THREE.MeshBasicMaterial({ color:0xFFFFFF });
+const EYE_B = new THREE.MeshBasicMaterial({ color:0x2B1A55 });
+function chara(color, r = .5, h = .6) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(r, h, 6, 18), toon(color));
+  const line = new THREE.Mesh(body.geometry, INK);
+  line.scale.setScalar(1.1);
+  g.add(body, line);
+  for (const sx of [-r*.42, r*.42]) {
+    const w = new THREE.Mesh(new THREE.SphereGeometry(r*.34, 14, 14), EYE_W);
+    w.position.set(sx, h*.45, r*.86); w.scale.z = .45; g.add(w);
+    const b = new THREE.Mesh(new THREE.SphereGeometry(r*.17, 12, 12), EYE_B);
+    b.position.set(sx, h*.45, r*1.02); b.scale.z = .45; g.add(b);
+  }
+  g.userData.body = body;
+  scene.add(g);
+  return g;
+}
+
+/* ── HUD ── */
+const panel   = document.getElementById('panel');
+const presult = document.getElementById('presult');
+const ptitle  = document.getElementById('ptitle');
+const scoreEl = document.getElementById('score');
+const bestEl  = document.getElementById('best');
+const playBtn = document.getElementById('play');
+
+function setTitle(text, color) {
+  ptitle.textContent = text; ptitle.dataset.text = text; ptitle.style.color = color;
+}
+function showPanel() {
+  const card = panel.firstElementChild;
+  card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
+  panel.hidden = false;
+}
+
+const BKEY = 'vertice.fruta-loca';
+const loadBest = () => { try { return Number(localStorage.getItem(BKEY)) || 0; } catch { return 0; } };
+const saveBest = v => { try { localStorage.setItem(BKEY, String(v)); } catch {} };
+let best = loadBest();
+const paintBest = () => { bestEl.textContent = best ? `récord ${best}` : ''; };
+paintBest();
+
+/* ── confeti ── */
+const confetti = [];
+const confGeo = new THREE.PlaneGeometry(.26, .36);
+function burst(pos, n = 50, spread = 3) {
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(confGeo, new THREE.MeshBasicMaterial({
+      color: CANDY[i % CANDY.length], side: THREE.DoubleSide
+    }));
+    m.position.copy(pos).add(new THREE.Vector3(
+      (Math.random()-.5)*spread, Math.random()*spread, (Math.random()-.5)*spread));
+    m.userData = { v:new THREE.Vector3((Math.random()-.5)*.12, .06+Math.random()*.11, (Math.random()-.5)*.12),
+                   rx:(Math.random()-.5)*.22, rz:(Math.random()-.5)*.22, life:1 };
+    scene.add(m); confetti.push(m);
+  }
+}
+function stepConfetti() {
+  for (let i = confetti.length - 1; i >= 0; i--) {
+    const m = confetti[i];
+    m.userData.v.y -= .006;
+    m.position.add(m.userData.v);
+    m.rotation.x += m.userData.rx;
+    m.rotation.z += m.userData.rz;
+    m.userData.life -= .008;
+    if (m.userData.life <= 0) { scene.remove(m); m.material.dispose(); confetti.splice(i,1); }
+  }
+}
+function clearConfetti() {
+  for (const m of confetti) { scene.remove(m); m.material.dispose(); }
+  confetti.length = 0;
+}
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+/* ══ Fruta Loca ════════════════════════════════════════════════════════ */
+
+camera.fov = 55;
+camera.updateProjectionMatrix();
+camera.position.set(0, 0, 13);
+camera.lookAt(0, 0, 0);
+
+const GRAV = .0135;
+const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const livesEl = document.getElementById('lives');
+
+function toWorld(cx, cy) {
+  ndc.set((cx / innerWidth) * 2 - 1, -((cy / innerHeight) * 2 - 1));
+  ray.setFromCamera(ndc, camera);
+  const p = new THREE.Vector3();
+  ray.ray.intersectPlane(plane, p);
+  return p;
+}
+
+/* ── objetos voladores ── */
+const flying = [];
+const halves = [];
+const fruitGeo = new THREE.IcosahedronGeometry(.62, 1);
+const bombGeo  = new THREE.IcosahedronGeometry(.6, 2);
+
+function spawn(isBomb) {
+  const color = isBomb ? 0x3B2A6B : CANDY[Math.floor(Math.random() * CANDY.length)];
+  const g = outlined(isBomb ? bombGeo : fruitGeo, color, isBomb ? 1.1 : 1.09);
+  if (isBomb) {
+    const fuse = outlined(rbox(.12, .5, .12, .05), 0xFFD53D, 1.2, g);
+    fuse.position.y = .62;
+  }
+  const x = (Math.random() - .5) * 9;
+  g.position.set(x, -7.4, (Math.random() - .5) * 1.5);
+  const v = new THREE.Vector3(
+    (Math.random() - .5) * .07 - x * .012,
+    .215 + Math.random() * .055,
+    0
+  );
+  flying.push({ g, v, isBomb, spin:new THREE.Vector3((Math.random()-.5)*.1, (Math.random()-.5)*.1, (Math.random()-.5)*.1) });
+}
+
+function splitFruit(f) {
+  const color = f.g.userData.skin.material.color.getHex();
+  for (const s of [-1, 1]) {
+    const h = outlined(fruitGeo, color, 1.09);
+    h.position.copy(f.g.position);
+    h.scale.set(.5, 1, 1);
+    h.userData.v = new THREE.Vector3(s * .09 + f.v.x * .5, f.v.y * .5, 0);
+    h.userData.spin = s * .16;
+    halves.push(h);
+  }
+  burst(f.g.position, 16, 1.2);
+}
+
+/* ── hoja: rastro de puntos que se apagan ── */
+const TRAIL = 16;
+const trail = [];
+const trailGeo = new THREE.PlaneGeometry(.34, .34);
+for (let i = 0; i < TRAIL; i++) {
+  const m = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({
+    color: 0xFFF6E5, transparent:true, opacity:0, depthWrite:false
+  }));
+  scene.add(m);
+  trail.push({ m, life:0 });
+}
+let trailIdx = 0;
+
+let state = 'ready', score = 0, lives = 3, spawnT = 0, cutting = false, lastPt = null;
+
+function paintLives() {
+  livesEl.textContent = '💛'.repeat(lives) + '🖤'.repeat(3 - lives);
+}
+
+function clearBoard() {
+  for (const f of flying) scene.remove(f.g);
+  for (const h of halves) scene.remove(h);
+  flying.length = 0; halves.length = 0;
+  for (const t of trail) { t.life = 0; t.m.material.opacity = 0; }
+}
+
+function start() {
+  clearBoard(); clearConfetti();
+  score = 0; lives = 3; spawnT = 0;
+  scoreEl.textContent = '0';
+  paintLives();
+  panel.hidden = true;
+  state = 'play';
+}
+playBtn.addEventListener('click', start);
+
+function gameOver(byBomb) {
+  state = 'over';
+  const record = score > best;
+  if (record) { best = score; saveBest(best); paintBest(); burst(new THREE.Vector3(0,0,0), 70, 6); }
+  setTitle(record ? '¡Récord!' : (byBomb ? '¡Bomba!' : 'Se acabó'), record ? '#3DE07A' : '#FF4D9D');
+  presult.hidden = false;
+  presult.innerHTML = record
+    ? `<b>${score} frutas</b><br>Nunca habías cortado tanto.`
+    : `<b>${score} frutas</b><br>Tu récord está en ${best}.`;
+  playBtn.textContent = '¡Otra vez!';
+  setTimeout(showPanel, 450);
+}
+
+/* ── cortar ── */
+function markTrail(p) {
+  const t = trail[trailIdx];
+  trailIdx = (trailIdx + 1) % TRAIL;
+  t.m.position.copy(p);
+  t.m.rotation.z = Math.random() * 3;
+  t.life = 1;
+}
+
+/* distancia de un punto al segmento a→b: así el corte no se salta frutas
+   cuando arrastras rápido y el puntero da saltos grandes entre frames */
+function segDist(a, b, p) {
+  const ab = b.clone().sub(a);
+  const len2 = ab.lengthSq();
+  if (len2 < 1e-6) return p.distanceTo(a);
+  let t = p.clone().sub(a).dot(ab) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return p.distanceTo(a.clone().addScaledVector(ab, t));
+}
+
+function slice(a, b) {
+  for (let i = flying.length - 1; i >= 0; i--) {
+    const f = flying[i];
+    if (segDist(a, b, f.g.position) < .78) {
+      if (f.isBomb) { scene.remove(f.g); flying.splice(i,1); burst(f.g.position, 40, 2); gameOver(true); return; }
+      splitFruit(f);
+      scene.remove(f.g);
+      flying.splice(i, 1);
+      score++;
+      scoreEl.textContent = score;
+    }
+  }
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if (state !== 'play') return;
+  cutting = true;
+  lastPt = toWorld(e.clientX, e.clientY);
+  markTrail(lastPt);
+});
+addEventListener('pointermove', e => {
+  if (!cutting || state !== 'play') return;
+  const p = toWorld(e.clientX, e.clientY);
+  markTrail(p);
+  if (lastPt) slice(lastPt, p);
+  lastPt = p;
+});
+addEventListener('pointerup', () => { cutting = false; lastPt = null; });
+addEventListener('keydown', e => {
+  if ((e.key === ' ' || e.key === 'Enter') && state !== 'play') { e.preventDefault(); start(); }
+});
+
+/* ── bucle ── */
+function frame() {
+  requestAnimationFrame(frame);
+
+  if (state === 'play') {
+    spawnT--;
+    if (spawnT <= 0) {
+      const rush = Math.min(score / 40, 1);
+      const n = 1 + (Math.random() < .25 + rush * .4 ? 1 : 0) + (Math.random() < rush * .3 ? 1 : 0);
+      for (let i = 0; i < n; i++) spawn(score > 6 && Math.random() < .16);
+      spawnT = 58 - rush * 26 + Math.random() * 18;
+    }
+
+    for (let i = flying.length - 1; i >= 0; i--) {
+      const f = flying[i];
+      f.v.y -= GRAV;
+      f.g.position.add(f.v);
+      f.g.rotation.x += f.spin.x; f.g.rotation.y += f.spin.y; f.g.rotation.z += f.spin.z;
+      if (f.g.position.y < -8) {
+        scene.remove(f.g);
+        flying.splice(i, 1);
+        if (!f.isBomb) {                    // las bombas que caen solas no penalizan
+          lives--;
+          paintLives();
+          if (lives <= 0) { gameOver(false); break; }
+        }
+      }
+    }
+  }
+
+  for (let i = halves.length - 1; i >= 0; i--) {
+    const h = halves[i];
+    h.userData.v.y -= GRAV;
+    h.position.add(h.userData.v);
+    h.rotation.z += h.userData.spin;
+    if (h.position.y < -9) { scene.remove(h); halves.splice(i, 1); }
+  }
+
+  for (const t of trail) {
+    if (t.life > 0) {
+      t.life -= .075;
+      t.m.material.opacity = Math.max(0, t.life * .85);
+      t.m.scale.setScalar(.5 + t.life * .8);
+    }
+  }
+
+  stepConfetti();
+  renderer.render(scene, camera);
+}
+frame();
+
+</script>
+</body>
+</html>

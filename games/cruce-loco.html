@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Cruce Loco — VÉRTICE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--ink:#2B1A55;--cream:#FFF6E5;--lemon:#FFD53D;--gum:#FF4D9D;--lime:#3DE07A}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none}
+  body{background:linear-gradient(180deg,#6A4BFF 0%,#4FC3FF 50%,#B6ECFF 100%);color:var(--ink);
+    font-family:Fredoka,"Trebuchet MS",sans-serif;font-weight:500;
+    -webkit-font-smoothing:antialiased;touch-action:none;user-select:none;}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+  .hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
+    align-items:flex-start;padding:16px 18px;pointer-events:none;gap:14px}
+  .chunk{background:var(--cream);border:5px solid var(--ink);border-radius:999px;
+    box-shadow:0 6px 0 var(--ink);padding:9px 20px;font-weight:700;font-size:17px}
+  .back{pointer-events:auto;text-decoration:none;color:var(--ink);transition:transform .1s,box-shadow .1s}
+  .back:hover{transform:translateY(3px);box-shadow:0 3px 0 var(--ink)}
+  .score{background:var(--lemon);font-size:clamp(1.4rem,5.2vw,2.1rem);padding:6px 24px 8px;
+    border-radius:26px;line-height:1.1;text-align:center;min-width:96px}
+  .best{display:block;font-size:.7rem;font-weight:600;opacity:.72;margin-top:-2px}
+
+  .panel{position:fixed;inset:0;display:grid;place-items:center;padding:22px;
+    background:rgba(43,26,85,.45);backdrop-filter:blur(4px)}
+  .panel[hidden]{display:none}
+  .card{background:var(--cream);border:7px solid var(--ink);border-radius:34px;
+    box-shadow:0 14px 0 var(--ink),0 30px 50px rgba(43,26,85,.45);
+    padding:32px 28px 28px;max-width:430px;width:100%;text-align:center;
+    animation:pop .45s cubic-bezier(.2,1.6,.4,1) both}
+  @keyframes pop{from{opacity:0;transform:scale(.75) translateY(24px)}to{opacity:1;transform:none}}
+  .card h1{isolation:isolate;margin:0 0 10px;font-size:clamp(1.9rem,7.5vw,2.8rem);
+    font-weight:700;line-height:.95;position:relative;color:var(--gum)}
+  .card h1::before{content:attr(data-text);position:absolute;inset:0;z-index:-1;
+    -webkit-text-stroke:10px var(--ink);color:transparent}
+  .result{font-size:1.12rem;font-weight:600;margin:0 0 12px}
+  .result b{font-size:1.4rem;color:var(--gum)}
+  .card p{margin:0 0 8px;font-size:1rem;font-weight:400;color:#5A4A80;line-height:1.45}
+  button{margin-top:18px;width:100%;padding:15px 20px 17px;font:inherit;font-weight:700;
+    font-size:1.3rem;color:var(--ink);background:var(--lime);border:6px solid var(--ink);
+    border-radius:999px;cursor:pointer;box-shadow:0 9px 0 #1E9E52;
+    transition:transform .1s,box-shadow .1s}
+  button:hover{transform:translateY(4px);box-shadow:0 5px 0 #1E9E52}
+  button:active{transform:translateY(9px);box-shadow:0 0 0 #1E9E52}
+  button:focus-visible{outline:5px solid var(--lemon);outline-offset:4px}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div class="hud">
+  <a class="chunk back" href="../index.html">← Volver</a>
+  <div class="chunk score"><span id="score">0</span><span class="best" id="best"></span></div>
+</div>
+
+<div class="panel" id="panel">
+  <div class="card">
+    <h1 id="ptitle" data-text="Cruce Loco">Cruce Loco</h1>
+    <p class="result" id="presult" hidden></p>
+    <p>Cruza carreteras y ríos saltando de casilla en casilla. Los coches no frenan y el agua no perdona.</p>
+    <p>Flechas o WASD. En móvil, desliza el dedo hacia donde quieras saltar.</p>
+    <button id="play">¡Empezar!</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.164.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.164.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+/* ══ base común de VÉRTICE ══════════════════════════════════════════ */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(48, 1, .1, 400);
+scene.add(new THREE.HemisphereLight(0xFFFFFF, 0x7C5BD0, 2.5));
+const sun = new THREE.DirectionalLight(0xFFFFFF, 2.0);
+sun.position.set(6, 13, 8);
+scene.add(sun);
+
+/* rampa de tres escalones: sombreado plano, de dibujo animado */
+const steps = new Uint8Array([90, 90, 180, 180, 255, 255, 255, 255]);
+const ramp = new THREE.DataTexture(steps, steps.length, 1, THREE.RedFormat);
+ramp.minFilter = ramp.magFilter = THREE.NearestFilter;
+ramp.needsUpdate = true;
+
+const toon = c => new THREE.MeshToonMaterial({ color:c, gradientMap:ramp });
+const INK  = new THREE.MeshBasicMaterial({ color:0x2B1A55, side:THREE.BackSide });
+const CANDY = [0xFF4D9D, 0xFFD53D, 0x3DE07A, 0xFF8A3D, 0x9B5CFF, 0x3FB8FF];
+const rbox = (w,h,d,r=.2) =>
+  new RoundedBoxGeometry(w, h, d, 4, Math.max(.02, Math.min(r, w/2.1, h/2.1, d/2.1)));
+
+/* contorno: copia inflada del cuerpo, vista por dentro */
+function outlined(geo, color, t = 1.09, parent = scene) {
+  const g = new THREE.Group();
+  const skin = new THREE.Mesh(geo, toon(color));
+  const line = new THREE.Mesh(geo, INK);
+  line.scale.setScalar(t);
+  g.add(skin, line);
+  g.userData.skin = skin;
+  g.userData.line = line;
+  parent.add(g);
+  return g;
+}
+
+/* personaje rechoncho con ojos */
+const EYE_W = new THREE.MeshBasicMaterial({ color:0xFFFFFF });
+const EYE_B = new THREE.MeshBasicMaterial({ color:0x2B1A55 });
+function chara(color, r = .5, h = .6) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(r, h, 6, 18), toon(color));
+  const line = new THREE.Mesh(body.geometry, INK);
+  line.scale.setScalar(1.1);
+  g.add(body, line);
+  for (const sx of [-r*.42, r*.42]) {
+    const w = new THREE.Mesh(new THREE.SphereGeometry(r*.34, 14, 14), EYE_W);
+    w.position.set(sx, h*.45, r*.86); w.scale.z = .45; g.add(w);
+    const b = new THREE.Mesh(new THREE.SphereGeometry(r*.17, 12, 12), EYE_B);
+    b.position.set(sx, h*.45, r*1.02); b.scale.z = .45; g.add(b);
+  }
+  g.userData.body = body;
+  scene.add(g);
+  return g;
+}
+
+/* ── HUD ── */
+const panel   = document.getElementById('panel');
+const presult = document.getElementById('presult');
+const ptitle  = document.getElementById('ptitle');
+const scoreEl = document.getElementById('score');
+const bestEl  = document.getElementById('best');
+const playBtn = document.getElementById('play');
+
+function setTitle(text, color) {
+  ptitle.textContent = text; ptitle.dataset.text = text; ptitle.style.color = color;
+}
+function showPanel() {
+  const card = panel.firstElementChild;
+  card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
+  panel.hidden = false;
+}
+
+const BKEY = 'vertice.cruce-loco';
+const loadBest = () => { try { return Number(localStorage.getItem(BKEY)) || 0; } catch { return 0; } };
+const saveBest = v => { try { localStorage.setItem(BKEY, String(v)); } catch {} };
+let best = loadBest();
+const paintBest = () => { bestEl.textContent = best ? `récord ${best}` : ''; };
+paintBest();
+
+/* ── confeti ── */
+const confetti = [];
+const confGeo = new THREE.PlaneGeometry(.26, .36);
+function burst(pos, n = 50, spread = 3) {
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(confGeo, new THREE.MeshBasicMaterial({
+      color: CANDY[i % CANDY.length], side: THREE.DoubleSide
+    }));
+    m.position.copy(pos).add(new THREE.Vector3(
+      (Math.random()-.5)*spread, Math.random()*spread, (Math.random()-.5)*spread));
+    m.userData = { v:new THREE.Vector3((Math.random()-.5)*.12, .06+Math.random()*.11, (Math.random()-.5)*.12),
+                   rx:(Math.random()-.5)*.22, rz:(Math.random()-.5)*.22, life:1 };
+    scene.add(m); confetti.push(m);
+  }
+}
+function stepConfetti() {
+  for (let i = confetti.length - 1; i >= 0; i--) {
+    const m = confetti[i];
+    m.userData.v.y -= .006;
+    m.position.add(m.userData.v);
+    m.rotation.x += m.userData.rx;
+    m.rotation.z += m.userData.rz;
+    m.userData.life -= .008;
+    if (m.userData.life <= 0) { scene.remove(m); m.material.dispose(); confetti.splice(i,1); }
+  }
+}
+function clearConfetti() {
+  for (const m of confetti) { scene.remove(m); m.material.dispose(); }
+  confetti.length = 0;
+}
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+/* ══ Cruce Loco ════════════════════════════════════════════════════════ */
+
+camera.fov = 40;
+camera.updateProjectionMatrix();
+scene.fog = new THREE.Fog(0x9FE0FF, 26, 62);
+
+const CELL = 2, LANE_W = 44, EDGE = 9;   // EDGE: casillas jugables a cada lado
+const GRASS = [0x54D473, 0x49C868], ROAD = 0x6B6480, RIVER = 0x35A8F0;
+
+const rows = new Map();
+let player, playerRow = 0, playerCol = 0, maxRow = 0;
+let hop = null, state = 'ready', dead = false, ridingLog = null;
+
+/* ── construcción de filas ── */
+function rowGround(i, color) {
+  const g = outlined(rbox(LANE_W, .6, CELL, .1), color, 1.01);
+  g.position.set(0, -.3, -i * CELL);
+  return g;
+}
+
+function buildRow(i) {
+  if (rows.has(i)) return;
+  const r = { i, objs: [], moving: [] };
+
+  // las primeras filas siempre son hierba: nadie muere en el segundo uno
+  const roll = i < 3 ? 0 : Math.random();
+  r.type = roll < .40 ? 'grass' : roll < .78 ? 'road' : 'river';
+
+  if (r.type === 'grass') {
+    r.ground = rowGround(i, GRASS[i % 2]);
+    r.blocked = new Set();
+    const trees = i < 3 ? 0 : Math.floor(Math.random() * 4);
+    for (let t = 0; t < trees; t++) {
+      const col = Math.floor(Math.random() * (EDGE*2+1)) - EDGE;
+      if (col === 0 && i <= maxRow + 1) continue;      // no tapes la salida
+      if (r.blocked.has(col)) continue;
+      r.blocked.add(col);
+      const trunk = outlined(rbox(.5,.9,.5,.12), 0x8A5A3B, 1.1);
+      trunk.position.set(col * CELL, .45, -i * CELL);
+      const top = outlined(new THREE.IcosahedronGeometry(.85, 0), 0x2FA855, 1.09);
+      top.position.set(col * CELL, 1.55, -i * CELL);
+      r.objs.push(trunk, top);
+    }
+  } else if (r.type === 'road') {
+    r.ground = rowGround(i, ROAD);
+    const stripe = new THREE.Mesh(rbox(LANE_W, .02, .18, .01), toon(0xFFD53D));
+    stripe.position.set(0, .02, -i * CELL);
+    scene.add(stripe); r.objs.push(stripe);
+    r.dir = Math.random() < .5 ? 1 : -1;
+    r.speed = (.045 + Math.random() * .055) * (1 + Math.min(maxRow, 60) / 120);
+    r.gap = 7 + Math.random() * 6;
+    const n = Math.max(2, Math.floor(LANE_W / (r.gap * CELL)));
+    for (let k = 0; k < n; k++) {
+      const car = outlined(rbox(1.9,.95,1.15,.22), CANDY[Math.floor(Math.random()*CANDY.length)]);
+      const cab = new THREE.Mesh(rbox(.9,.5,1.0,.16), toon(0xFFF6E5));
+      cab.position.set(-.15, .62, 0); car.add(cab);
+      car.position.set(-LANE_W/2 + k * r.gap * CELL + Math.random()*2, .62, -i * CELL);
+      car.scale.x = r.dir;
+      r.moving.push(car);
+    }
+  } else {
+    r.ground = rowGround(i, RIVER);
+    r.dir = Math.random() < .5 ? 1 : -1;
+    r.speed = .035 + Math.random() * .04;
+    r.gap = 6 + Math.random() * 4;
+    const n = Math.max(2, Math.floor(LANE_W / (r.gap * CELL)));
+    for (let k = 0; k < n; k++) {
+      const len = 3 + Math.floor(Math.random() * 3);
+      const log = outlined(rbox(len * .9, .5, 1.3, .24), 0x9A6B3F);
+      log.userData.half = len * .45;
+      log.position.set(-LANE_W/2 + k * r.gap * CELL + Math.random()*2, .1, -i * CELL);
+      r.moving.push(log);
+    }
+  }
+  rows.set(i, r);
+}
+
+function dropRow(i) {
+  const r = rows.get(i); if (!r) return;
+  for (const o of [r.ground, ...r.objs, ...r.moving]) scene.remove(o);
+  rows.delete(i);
+}
+
+/* ── partida ── */
+function reset() {
+  for (const i of [...rows.keys()]) dropRow(i);
+  clearConfetti();
+  playerRow = 0; playerCol = 0; maxRow = 0; hop = null; dead = false; ridingLog = null;
+  for (let i = -4; i < 14; i++) buildRow(i);
+  if (!player) player = chara(0xFFD53D, .48, .55);
+  player.position.set(0, .55, 0);
+  player.scale.set(1,1,1);
+  player.rotation.set(0,0,0);
+  player.visible = true;
+  scoreEl.textContent = '0';
+}
+
+function start() {
+  reset();
+  panel.hidden = true;
+  state = 'play';
+}
+playBtn.addEventListener('click', start);
+
+function gameOver(cause) {
+  if (state !== 'play') return;
+  state = 'over';
+  const record = maxRow > best;
+  if (record) { best = maxRow; saveBest(best); paintBest(); burst(player.position, 60); }
+  setTitle(record ? '¡Récord!' : (cause === 'agua' ? '¡Chof!' : '¡Zas!'), record ? '#3DE07A' : '#FF4D9D');
+  presult.hidden = false;
+  presult.innerHTML = record
+    ? `<b>${maxRow} casillas</b><br>No habías llegado tan lejos.`
+    : `<b>${maxRow} casillas</b><br>Tu récord está en ${best}.`;
+  playBtn.textContent = '¡Otra vez!';
+  setTimeout(showPanel, 520);
+}
+
+/* ── salto ── */
+function tryHop(dRow, dCol) {
+  if (state !== 'play' || hop || dead) return;
+  const nr = playerRow + dRow, nc = playerCol + dCol;
+  if (Math.abs(nc) > EDGE) return;
+  const row = rows.get(nr);
+  if (row && row.type === 'grass' && row.blocked && row.blocked.has(nc)) return;  // árbol
+  hop = { t:0, fromR:playerRow, fromC:playerCol, fromX:player.position.x, toR:nr, toC:nc };
+  playerRow = nr; playerCol = nc;
+  ridingLog = null;
+  if (dCol) player.rotation.y = dCol > 0 ? -Math.PI/2 : Math.PI/2;
+  else player.rotation.y = dRow > 0 ? 0 : Math.PI;
+}
+
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === ' ' || k === 'enter') { if (state !== 'play') { e.preventDefault(); start(); } return; }
+  if (['arrowup','w'].includes(k))    { e.preventDefault(); tryHop( 1, 0); }
+  if (['arrowdown','s'].includes(k))  { e.preventDefault(); tryHop(-1, 0); }
+  if (['arrowleft','a'].includes(k))  { e.preventDefault(); tryHop( 0,-1); }
+  if (['arrowright','d'].includes(k)) { e.preventDefault(); tryHop( 0, 1); }
+});
+
+let touch = null;
+canvas.addEventListener('pointerdown', e => { touch = { x:e.clientX, y:e.clientY }; });
+canvas.addEventListener('pointerup', e => {
+  if (!touch) return;
+  const dx = e.clientX - touch.x, dy = e.clientY - touch.y;
+  touch = null;
+  if (Math.abs(dx) < 26 && Math.abs(dy) < 26) { tryHop(1, 0); return; }   // toque = adelante
+  if (Math.abs(dx) > Math.abs(dy)) tryHop(0, dx > 0 ? 1 : -1);
+  else tryHop(dy < 0 ? 1 : -1, 0);
+});
+
+/* ── bucle ── */
+function frame() {
+  requestAnimationFrame(frame);
+
+  if (state === 'play') {
+    // tráfico y troncos
+    for (const r of rows.values()) {
+      if (!r.moving.length) continue;
+      const limit = LANE_W / 2 + 6;
+      for (const m of r.moving) {
+        m.position.x += r.speed * r.dir;
+        if (r.dir > 0 && m.position.x >  limit) m.position.x = -limit;
+        if (r.dir < 0 && m.position.x < -limit) m.position.x =  limit;
+      }
+    }
+
+    // salto
+    if (hop) {
+      hop.t = Math.min(1, hop.t + .14);
+      const e = hop.t;
+      const x = (hop.fromX + (hop.toC * CELL - hop.fromX) * e);
+      player.position.x = x;
+      player.position.z = -(hop.fromR + (hop.toR - hop.fromR) * e) * CELL;
+      player.position.y = .55 + Math.sin(e * Math.PI) * .9;
+      const s = 1 + Math.sin(e * Math.PI) * .16;
+      player.scale.set(2 - s, s, 2 - s);
+      if (hop.t >= 1) {
+        hop = null;
+        player.scale.set(1,1,1);
+        if (playerRow > maxRow) {
+          maxRow = playerRow;
+          scoreEl.textContent = maxRow;
+          for (let i = maxRow - 4; i < maxRow + 14; i++) buildRow(i);
+          for (const i of [...rows.keys()]) if (i < maxRow - 8) dropRow(i);
+        }
+      }
+    }
+
+    const row = rows.get(playerRow);
+    if (row && !hop) {
+      if (row.type === 'river') {
+        // ¿hay tronco debajo?
+        let on = null;
+        for (const log of row.moving) {
+          if (Math.abs(log.position.x - player.position.x) < log.userData.half + .35) { on = log; break; }
+        }
+        if (on) {
+          ridingLog = on;
+          player.position.x += row.speed * row.dir;
+          player.position.y = .5;
+          if (Math.abs(player.position.x) > LANE_W/2 - 2) { dead = true; gameOver('agua'); }
+        } else if (!dead) {
+          dead = true;
+          player.position.y = .1;
+          gameOver('agua');
+        }
+      } else if (row.type === 'road') {
+        for (const car of row.moving) {
+          if (Math.abs(car.position.x - player.position.x) < 1.35) {
+            dead = true;
+            player.scale.set(1.5, .35, 1.5);
+            gameOver('coche');
+            break;
+          }
+        }
+      }
+    }
+    if (dead && rows.get(playerRow) && rows.get(playerRow).type === 'river') {
+      player.position.y -= .05;                       // se hunde
+      if (player.position.y < -1.4) player.visible = false;
+    }
+  }
+
+  stepConfetti();
+
+  // cámara isométrica que sigue al jugador
+  const tz = -(hop ? hop.toR : playerRow) * CELL;
+  const tx = player ? player.position.x * .45 : 0;
+  camera.position.x += (tx + 6.5 - camera.position.x) * .08;
+  camera.position.y += (11.5 - camera.position.y) * .08;
+  camera.position.z += (tz + 11 - camera.position.z) * .08;
+  camera.lookAt(tx * .6, 0, tz - 2.5);
+
+  renderer.render(scene, camera);
+}
+reset();
+frame();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Sumo Party — VÉRTICE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--ink:#2B1A55;--cream:#FFF6E5;--lemon:#FFD53D;--gum:#FF4D9D;--lime:#3DE07A}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none}
+  body{background:linear-gradient(180deg,#7B5CFF 0%,#42BBFF 55%,#AEE8FF 100%);color:var(--ink);
+    font-family:Fredoka,"Trebuchet MS",sans-serif;font-weight:500;
+    -webkit-font-smoothing:antialiased;touch-action:none;user-select:none;}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+  .hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
+    align-items:flex-start;padding:16px 18px;pointer-events:none;gap:14px}
+  .chunk{background:var(--cream);border:5px solid var(--ink);border-radius:999px;
+    box-shadow:0 6px 0 var(--ink);padding:9px 20px;font-weight:700;font-size:17px}
+  .back{pointer-events:auto;text-decoration:none;color:var(--ink);transition:transform .1s,box-shadow .1s}
+  .back:hover{transform:translateY(3px);box-shadow:0 3px 0 var(--ink)}
+  .score{background:var(--lemon);font-size:clamp(1.4rem,5.2vw,2.1rem);padding:6px 24px 8px;
+    border-radius:26px;line-height:1.1;text-align:center;min-width:96px}
+  .best{display:block;font-size:.7rem;font-weight:600;opacity:.72;margin-top:-2px}
+
+  .panel{position:fixed;inset:0;display:grid;place-items:center;padding:22px;
+    background:rgba(43,26,85,.45);backdrop-filter:blur(4px)}
+  .panel[hidden]{display:none}
+  .card{background:var(--cream);border:7px solid var(--ink);border-radius:34px;
+    box-shadow:0 14px 0 var(--ink),0 30px 50px rgba(43,26,85,.45);
+    padding:32px 28px 28px;max-width:430px;width:100%;text-align:center;
+    animation:pop .45s cubic-bezier(.2,1.6,.4,1) both}
+  @keyframes pop{from{opacity:0;transform:scale(.75) translateY(24px)}to{opacity:1;transform:none}}
+  .card h1{isolation:isolate;margin:0 0 10px;font-size:clamp(1.9rem,7.5vw,2.8rem);
+    font-weight:700;line-height:.95;position:relative;color:var(--gum)}
+  .card h1::before{content:attr(data-text);position:absolute;inset:0;z-index:-1;
+    -webkit-text-stroke:10px var(--ink);color:transparent}
+  .result{font-size:1.12rem;font-weight:600;margin:0 0 12px}
+  .result b{font-size:1.4rem;color:var(--gum)}
+  .card p{margin:0 0 8px;font-size:1rem;font-weight:400;color:#5A4A80;line-height:1.45}
+  button{margin-top:18px;width:100%;padding:15px 20px 17px;font:inherit;font-weight:700;
+    font-size:1.3rem;color:var(--ink);background:var(--lime);border:6px solid var(--ink);
+    border-radius:999px;cursor:pointer;box-shadow:0 9px 0 #1E9E52;
+    transition:transform .1s,box-shadow .1s}
+  button:hover{transform:translateY(4px);box-shadow:0 5px 0 #1E9E52}
+  button:active{transform:translateY(9px);box-shadow:0 0 0 #1E9E52}
+  button:focus-visible{outline:5px solid var(--lemon);outline-offset:4px}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div class="hud">
+  <a class="chunk back" href="../index.html">← Volver</a>
+  <div class="chunk score"><span id="score">0</span><span class="best" id="best"></span></div>
+</div>
+
+<div class="panel" id="panel">
+  <div class="card">
+    <h1 id="ptitle" data-text="Sumo Party">Sumo Party</h1>
+    <p class="result" id="presult" hidden></p>
+    <p>Empuja a los rivales fuera de la plataforma. Cada ronda entra uno más y el suelo se encoge.</p>
+    <p>Flechas o WASD. En móvil, arrastra el dedo hacia donde quieras ir.</p>
+    <button id="play">¡Empezar!</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.164.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.164.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+/* ══ base común de VÉRTICE ══════════════════════════════════════════ */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(48, 1, .1, 400);
+scene.add(new THREE.HemisphereLight(0xFFFFFF, 0x7C5BD0, 2.5));
+const sun = new THREE.DirectionalLight(0xFFFFFF, 2.0);
+sun.position.set(6, 13, 8);
+scene.add(sun);
+
+/* rampa de tres escalones: sombreado plano, de dibujo animado */
+const steps = new Uint8Array([90, 90, 180, 180, 255, 255, 255, 255]);
+const ramp = new THREE.DataTexture(steps, steps.length, 1, THREE.RedFormat);
+ramp.minFilter = ramp.magFilter = THREE.NearestFilter;
+ramp.needsUpdate = true;
+
+const toon = c => new THREE.MeshToonMaterial({ color:c, gradientMap:ramp });
+const INK  = new THREE.MeshBasicMaterial({ color:0x2B1A55, side:THREE.BackSide });
+const CANDY = [0xFF4D9D, 0xFFD53D, 0x3DE07A, 0xFF8A3D, 0x9B5CFF, 0x3FB8FF];
+const rbox = (w,h,d,r=.2) =>
+  new RoundedBoxGeometry(w, h, d, 4, Math.max(.02, Math.min(r, w/2.1, h/2.1, d/2.1)));
+
+/* contorno: copia inflada del cuerpo, vista por dentro */
+function outlined(geo, color, t = 1.09, parent = scene) {
+  const g = new THREE.Group();
+  const skin = new THREE.Mesh(geo, toon(color));
+  const line = new THREE.Mesh(geo, INK);
+  line.scale.setScalar(t);
+  g.add(skin, line);
+  g.userData.skin = skin;
+  g.userData.line = line;
+  parent.add(g);
+  return g;
+}
+
+/* personaje rechoncho con ojos */
+const EYE_W = new THREE.MeshBasicMaterial({ color:0xFFFFFF });
+const EYE_B = new THREE.MeshBasicMaterial({ color:0x2B1A55 });
+function chara(color, r = .5, h = .6) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(r, h, 6, 18), toon(color));
+  const line = new THREE.Mesh(body.geometry, INK);
+  line.scale.setScalar(1.1);
+  g.add(body, line);
+  for (const sx of [-r*.42, r*.42]) {
+    const w = new THREE.Mesh(new THREE.SphereGeometry(r*.34, 14, 14), EYE_W);
+    w.position.set(sx, h*.45, r*.86); w.scale.z = .45; g.add(w);
+    const b = new THREE.Mesh(new THREE.SphereGeometry(r*.17, 12, 12), EYE_B);
+    b.position.set(sx, h*.45, r*1.02); b.scale.z = .45; g.add(b);
+  }
+  g.userData.body = body;
+  scene.add(g);
+  return g;
+}
+
+/* ── HUD ── */
+const panel   = document.getElementById('panel');
+const presult = document.getElementById('presult');
+const ptitle  = document.getElementById('ptitle');
+const scoreEl = document.getElementById('score');
+const bestEl  = document.getElementById('best');
+const playBtn = document.getElementById('play');
+
+function setTitle(text, color) {
+  ptitle.textContent = text; ptitle.dataset.text = text; ptitle.style.color = color;
+}
+function showPanel() {
+  const card = panel.firstElementChild;
+  card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
+  panel.hidden = false;
+}
+
+const BKEY = 'vertice.sumo-party';
+const loadBest = () => { try { return Number(localStorage.getItem(BKEY)) || 0; } catch { return 0; } };
+const saveBest = v => { try { localStorage.setItem(BKEY, String(v)); } catch {} };
+let best = loadBest();
+const paintBest = () => { bestEl.textContent = best ? `récord ${best}` : ''; };
+paintBest();
+
+/* ── confeti ── */
+const confetti = [];
+const confGeo = new THREE.PlaneGeometry(.26, .36);
+function burst(pos, n = 50, spread = 3) {
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(confGeo, new THREE.MeshBasicMaterial({
+      color: CANDY[i % CANDY.length], side: THREE.DoubleSide
+    }));
+    m.position.copy(pos).add(new THREE.Vector3(
+      (Math.random()-.5)*spread, Math.random()*spread, (Math.random()-.5)*spread));
+    m.userData = { v:new THREE.Vector3((Math.random()-.5)*.12, .06+Math.random()*.11, (Math.random()-.5)*.12),
+                   rx:(Math.random()-.5)*.22, rz:(Math.random()-.5)*.22, life:1 };
+    scene.add(m); confetti.push(m);
+  }
+}
+function stepConfetti() {
+  for (let i = confetti.length - 1; i >= 0; i--) {
+    const m = confetti[i];
+    m.userData.v.y -= .006;
+    m.position.add(m.userData.v);
+    m.rotation.x += m.userData.rx;
+    m.rotation.z += m.userData.rz;
+    m.userData.life -= .008;
+    if (m.userData.life <= 0) { scene.remove(m); m.material.dispose(); confetti.splice(i,1); }
+  }
+}
+function clearConfetti() {
+  for (const m of confetti) { scene.remove(m); m.material.dispose(); }
+  confetti.length = 0;
+}
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+/* ══ Sumo Party ════════════════════════════════════════════════════════ */
+
+camera.fov = 46;
+camera.updateProjectionMatrix();
+scene.fog = new THREE.Fog(0x9AD8FF, 30, 78);
+
+let R = 9;                       // radio de la plataforma
+const RAD = .72;                 // radio de cada luchador
+
+const arena = outlined(new THREE.CylinderGeometry(R, R * .92, 1.1, 40), 0xFFD53D, 1.015);
+arena.position.y = -.55;
+const rim = outlined(new THREE.TorusGeometry(R, .22, 8, 44), 0xFF4D9D, 1.06);
+rim.rotation.x = Math.PI / 2;
+rim.position.y = .05;
+
+function setRadius(r) {
+  R = r;
+  const s = r / 9;
+  arena.scale.set(s, 1, s);
+  rim.scale.set(s, s, 1);
+}
+
+/* ── luchadores ── */
+const fighters = [];
+function makeFighter(color, isPlayer) {
+  const g = chara(color, RAD, .8);
+  return { g, isPlayer, pos:new THREE.Vector2(), vel:new THREE.Vector2(),
+           alive:true, falling:false, squash:0, color };
+}
+
+let state = 'ready', round = 1, wobble = 0, shake = 0;
+
+function layout(n) {
+  const player = fighters[0];
+  player.pos.set(0, 0);
+  player.vel.set(0, 0);
+  for (let i = 1; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    fighters[i].pos.set(Math.cos(a) * R * .62, Math.sin(a) * R * .62);
+    fighters[i].vel.set(0, 0);
+  }
+}
+
+function setRound(n) {
+  round = n;
+  setRadius(Math.max(5.6, 9 - (n - 1) * .55));
+  const rivals = Math.min(1 + n, 6);
+  // crea los que falten
+  while (fighters.length < rivals + 1) {
+    fighters.push(makeFighter(CANDY[(fighters.length + 1) % CANDY.length], false));
+  }
+  fighters.forEach((f, i) => {
+    f.alive = i <= rivals;
+    f.falling = false;
+    f.g.visible = f.alive;
+    f.g.scale.set(1,1,1);
+  });
+  layout(rivals);
+  scoreEl.textContent = 'R' + n;
+}
+
+function start() {
+  clearConfetti();
+  if (!fighters.length) fighters.push(makeFighter(0x3DE07A, true));
+  setRound(1);
+  panel.hidden = true;
+  state = 'play';
+}
+playBtn.addEventListener('click', start);
+
+function gameOver() {
+  state = 'over';
+  const survived = round - 1;
+  const record = survived > best;
+  if (record) { best = survived; saveBest(best); paintBest(); burst(new THREE.Vector3(0,2,0), 70, 5); }
+  setTitle(record ? '¡Récord!' : '¡Fuera!', record ? '#3DE07A' : '#FF4D9D');
+  presult.hidden = false;
+  presult.innerHTML = record
+    ? `<b>${survived} rondas</b><br>Nadie ha aguantado tanto.`
+    : `<b>${survived} rondas</b><br>Tu récord está en ${best}.`;
+  playBtn.textContent = '¡Otra vez!';
+  setTimeout(showPanel, 600);
+}
+
+function winRound() {
+  burst(new THREE.Vector3(0, 2, 0), 40, 6);
+  wobble = 1;
+  setTimeout(() => { if (state === 'play') setRound(round + 1); }, 700);
+  state = 'between';
+}
+
+/* ── controles ── */
+const keys = new Set();
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if ((k === ' ' || k === 'enter') && state !== 'play') { e.preventDefault(); start(); }
+  keys.add(k);
+  if (k.startsWith('arrow') || k === ' ') e.preventDefault();
+});
+addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+
+let drag = null;
+canvas.addEventListener('pointerdown', e => { drag = { x:e.clientX, y:e.clientY, cx:e.clientX, cy:e.clientY }; });
+addEventListener('pointermove', e => { if (drag) { drag.cx = e.clientX; drag.cy = e.clientY; } });
+addEventListener('pointerup', () => { drag = null; });
+
+function inputDir() {
+  const d = new THREE.Vector2();
+  if (keys.has('arrowup')    || keys.has('w')) d.y -= 1;
+  if (keys.has('arrowdown')  || keys.has('s')) d.y += 1;
+  if (keys.has('arrowleft')  || keys.has('a')) d.x -= 1;
+  if (keys.has('arrowright') || keys.has('d')) d.x += 1;
+  if (drag) {
+    const dx = drag.cx - drag.x, dy = drag.cy - drag.y;
+    if (Math.hypot(dx, dy) > 12) d.set(dx, dy);
+  }
+  return d.lengthSq() ? d.normalize() : d;
+}
+
+/* ── bucle ── */
+function frame() {
+  requestAnimationFrame(frame);
+
+  if (state === 'play' || state === 'between') {
+    const player = fighters[0];
+
+    if (state === 'play' && player.alive && !player.falling) {
+      const d = inputDir();
+      player.vel.x += d.x * .026;
+      player.vel.y += d.y * .026;
+    }
+
+    // los rivales van a por ti, con un poco de despiste
+    for (let i = 1; i < fighters.length; i++) {
+      const f = fighters[i];
+      if (!f.alive || f.falling || state !== 'play') continue;
+      const target = fighters[0].alive ? fighters[0].pos : null;
+      if (!target) continue;
+      const d = target.clone().sub(f.pos);
+      if (d.lengthSq() > .01) d.normalize();
+      const speed = .014 + Math.min(round, 8) * .0016;
+      f.vel.x += (d.x + (Math.random()-.5) * .5) * speed;
+      f.vel.y += (d.y + (Math.random()-.5) * .5) * speed;
+    }
+
+    // colisiones entre luchadores
+    for (let i = 0; i < fighters.length; i++) {
+      const a = fighters[i];
+      if (!a.alive || a.falling) continue;
+      for (let j = i + 1; j < fighters.length; j++) {
+        const b = fighters[j];
+        if (!b.alive || b.falling) continue;
+        const d = b.pos.clone().sub(a.pos);
+        const dist = d.length();
+        if (dist > 0 && dist < RAD * 2) {
+          const n = d.divideScalar(dist);
+          const overlap = RAD * 2 - dist;
+          a.pos.addScaledVector(n, -overlap / 2);
+          b.pos.addScaledVector(n,  overlap / 2);
+          // el impulso depende de a qué velocidad llegabas: los porrazos se notan
+          const rel = a.vel.clone().sub(b.vel).dot(n);
+          const push = Math.max(.09, Math.abs(rel) * 1.35);
+          a.vel.addScaledVector(n, -push);
+          b.vel.addScaledVector(n,  push);
+          a.squash = b.squash = 1;
+          shake = Math.min(1, shake + Math.abs(rel) * .5);
+        }
+      }
+    }
+
+    // movimiento, rozamiento y caída
+    let rivalsLeft = 0;
+    for (let i = 0; i < fighters.length; i++) {
+      const f = fighters[i];
+      if (!f.alive) continue;
+      if (!f.falling) {
+        f.pos.add(f.vel);
+        f.vel.multiplyScalar(.935);
+        if (f.pos.length() > R - RAD * .35) f.falling = true;
+      } else {
+        f.pos.addScaledVector(f.vel, 1);
+        f.g.position.y -= .06;
+        f.g.rotation.z += .09;
+        if (f.g.position.y < -9) {
+          f.alive = false; f.g.visible = false;
+          if (i === 0) { gameOver(); return; }
+        }
+      }
+      if (i > 0 && f.alive) rivalsLeft++;
+      f.g.position.x = f.pos.x;
+      f.g.position.z = f.pos.y;
+      if (!f.falling) f.g.position.y = .55 + Math.abs(Math.sin(performance.now()*.006 + i)) * .06;
+      if (f.squash > 0) {
+        f.squash -= .07;
+        const s = 1 + Math.sin(f.squash * Math.PI) * .22;
+        f.g.scale.set(s, 2 - s, s);
+      } else f.g.scale.set(1,1,1);
+      const v = f.vel.length();
+      if (v > .01) f.g.rotation.y = Math.atan2(f.vel.x, f.vel.y);
+    }
+
+    if (state === 'play' && rivalsLeft === 0) winRound();
+  }
+
+  if (wobble > 0) { wobble -= .02; arena.position.y = -.55 + Math.sin(wobble * 12) * wobble * .3; }
+  if (shake > 0) shake = Math.max(0, shake - .04);
+  stepConfetti();
+
+  const px = fighters[0] ? fighters[0].pos.x : 0, pz = fighters[0] ? fighters[0].pos.y : 0;
+  camera.position.set(px * .18 + (Math.random()-.5)*shake*.5, 13.5, pz * .18 + 13.5);
+  camera.lookAt(0, 0, 0);
+
+  renderer.render(scene, camera);
+}
+frame();
+
+</script>
+</body>
+</html>

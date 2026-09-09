@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VÉRTICE — minijuegos</title>
+<meta name="description" content="Minijuegos hechos con Three.js. Se juegan en el navegador, sin instalar nada.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#2B1A55;
+    --sky-1:#7B5CFF; --sky-2:#3FB8FF; --sky-3:#8FE3FF;
+    --lemon:#FFD53D; --gum:#FF4D9D; --tang:#FF8A3D;
+    --lime:#3DE07A; --grape:#9B5CFF; --cream:#FFF6E5;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;color:var(--ink);
+    font-family:Fredoka,"Trebuchet MS",sans-serif;font-weight:500;font-size:18px;
+    background:linear-gradient(180deg,var(--sky-1) 0%,var(--sky-2) 45%,var(--sky-3) 100%);
+    background-attachment:fixed;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;
+  }
+  #stage{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0}
+  .layer{position:relative;z-index:1}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 22px}
+
+  /* ─── barra superior ─── */
+  .top{display:flex;align-items:center;padding:20px 0}
+  .brand{font-weight:700;font-size:22px;color:var(--cream);
+    text-shadow:0 3px 0 var(--ink),0 6px 0 rgba(43,26,85,.35)}
+
+  /* ─── hero ─── */
+  .hero{min-height:82vh;display:flex;flex-direction:column;justify-content:center;
+    align-items:center;text-align:center;padding:40px 0 70px}
+  .title{
+    position:relative;isolation:isolate;margin:0;font-weight:700;
+    font-size:clamp(3.4rem,15vw,10rem);line-height:.86;letter-spacing:-.02em;
+    color:var(--lemon);filter:drop-shadow(0 14px 0 rgba(43,26,85,.4));
+    animation:pop .7s cubic-bezier(.2,1.5,.4,1) both;
+  }
+  .title::before{
+    content:attr(data-text);position:absolute;inset:0;z-index:-1;
+    -webkit-text-stroke:14px var(--ink);color:transparent;
+  }
+  .tag{
+    margin:26px 0 0;max-width:22ch;font-size:clamp(1.05rem,2.6vw,1.4rem);
+    color:#fff;font-weight:500;line-height:1.35;
+    text-shadow:0 3px 0 rgba(43,26,85,.55);
+    animation:pop .7s .12s cubic-bezier(.2,1.5,.4,1) both;
+  }
+  .cta{
+    margin-top:34px;display:inline-block;text-decoration:none;
+    background:var(--lime);color:var(--ink);font-weight:700;
+    font-size:clamp(1.3rem,4vw,1.9rem);padding:18px 52px 20px;
+    border:6px solid var(--ink);border-radius:999px;
+    box-shadow:0 10px 0 #1E9E52,0 22px 34px rgba(43,26,85,.35);
+    animation:pop .7s .24s cubic-bezier(.2,1.5,.4,1) both;
+    transition:transform .1s,box-shadow .1s;
+  }
+  .cta:hover{transform:translateY(4px);box-shadow:0 6px 0 #1E9E52,0 16px 24px rgba(43,26,85,.3)}
+  .cta:active{transform:translateY(10px);box-shadow:0 0 0 #1E9E52,0 8px 14px rgba(43,26,85,.25)}
+  @keyframes pop{from{opacity:0;transform:scale(.7) translateY(26px)}to{opacity:1;transform:none}}
+
+  /* ─── tira de pastillas ─── */
+  .pills{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;padding:0 0 44px}
+  .pill{background:var(--cream);border:4px solid var(--ink);border-radius:999px;
+    padding:8px 20px;font-weight:600;font-size:15px;box-shadow:0 5px 0 var(--ink)}
+  .pill:nth-child(2){background:var(--lemon)}
+  .pill:nth-child(3){background:var(--gum);color:var(--cream)}
+
+  /* ─── juegos ─── */
+  .head{isolation:isolate;text-align:center;margin:0 0 34px;font-size:clamp(2rem,7vw,3.4rem);font-weight:700;
+    color:var(--cream);position:relative}
+  .head::before{content:attr(data-text);position:absolute;inset:0;z-index:-1;
+    -webkit-text-stroke:11px var(--ink);color:transparent}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:28px;
+    padding-bottom:70px}
+  .card{
+    display:block;text-decoration:none;color:var(--ink);
+    background:var(--cream);border:6px solid var(--ink);border-radius:30px;
+    box-shadow:0 12px 0 var(--ink),0 26px 40px rgba(43,26,85,.3);
+    overflow:hidden;transition:transform .13s ease,box-shadow .13s ease;
+  }
+  .card:nth-child(odd){transform:rotate(-1.1deg)}
+  .card:nth-child(even){transform:rotate(1deg)}
+  .card:hover,.card:focus-visible{transform:rotate(0) translateY(-6px);
+    box-shadow:0 18px 0 var(--ink),0 34px 50px rgba(43,26,85,.34)}
+  .card:active{transform:rotate(0) translateY(6px);box-shadow:0 4px 0 var(--ink)}
+  .card:focus-visible{outline:5px solid var(--lemon);outline-offset:4px}
+  .cap{height:132px;display:grid;place-items:center;border-bottom:6px solid var(--ink);
+    background:var(--accent)}
+  .cap svg{width:82px;height:82px;filter:drop-shadow(0 5px 0 rgba(43,26,85,.4))}
+  .body{display:block;padding:20px 22px 24px}
+  .name{display:block;font-size:1.7rem;font-weight:700;line-height:1;margin:0 0 8px}
+  .desc{margin:0 0 16px;display:block;font-size:1rem;line-height:1.4;color:#5A4A80;font-weight:400}
+  .keys{display:inline-block;background:#EFE6FF;border:3px solid var(--ink);
+    border-radius:999px;padding:5px 14px;font-size:.85rem;font-weight:600}
+
+  footer{padding:0 0 60px;text-align:center;color:#fff;font-weight:500;
+    text-shadow:0 2px 0 rgba(43,26,85,.5)}
+  footer a{color:var(--lemon)}
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="stage"></canvas>
+
+<div class="layer">
+  <div class="wrap">
+    <div class="top">
+      <span class="brand">VÉRTICE</span>
+    </div>
+
+    <section class="hero">
+      <h1 class="title" data-text="VÉRTICE">VÉRTICE</h1>
+      <p class="tag">Minijuegos que se abren de golpe y se juegan con una mano.</p>
+      <a class="cta" href="#juegos">¡A jugar!</a>
+    </section>
+
+    <div class="pills">
+      <span class="pill">Sin instalar nada</span>
+      <span class="pill">Gratis y sin cuentas</span>
+      <span class="pill">Móvil y ordenador</span>
+    </div>
+
+    <section id="juegos">
+      <h2 class="head" data-text="Elige juego">Elige juego</h2>
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <footer>
+      Hechos con Three.js, uno cada fin de semana. ¿Se te ocurre el siguiente?
+      <a href="https://github.com/" rel="noopener">Cuéntamelo</a>.
+    </footer>
+  </div>
+</div>
+
+<!-- ══ AÑADIR UN JUEGO: una entrada aquí + su archivo en /games ══ -->
+<script>
+const GAMES = [
+  {
+    slug:'cube-runner', title:'Cube Runner',
+    desc:'Corre por un pasillo que no para de acelerar y esquiva todo lo que se te venga encima.',
+    keys:'Flechas o desliza el dedo', shape:'runner', color:'var(--gum)'
+  },
+  {
+    slug:'tower-stack', title:'Tower Stack',
+    desc:'Apila piezas en movimiento. Lo que sobresale se corta y se cae al vacío.',
+    keys:'Clic, espacio o toca', shape:'tower', color:'var(--lemon)'
+  },
+  {
+    slug:'olimpiadas-granja', title:'Olimpiadas de la Granja',
+    desc:'Diez pruebas de verano e invierno con cuatro campeones de granja. Para los más peques.',
+    keys:'Solo hay que tocar la pantalla', shape:'farm', color:'var(--lime)'
+  },
+  {
+    slug:'porrazo-party', title:'Porrazo Party',
+    desc:'Peleas de barrio entre muñecos rechonchos. Tres asaltos, gana quien aguante de pie.',
+    keys:'Arrastra para moverte y pulsa para pegar', shape:'fight', color:'var(--tang)'
+  },
+  {
+    slug:'aura-battle', title:'Aura Battle',
+    desc:'Batalla de baile por turnos: farmeas aura diez segundos y luego le abucheas a él.',
+    keys:'Teclas 1–8 y espacio · mejor en horizontal', shape:'dance', color:'var(--grape)'
+  },
+  {
+    slug:'turbo-kart-rally', title:'Turbo Kart Rally',
+    desc:'El kart acelera solo. Tú trazas la curva, derrapas para cargar turbo y lanzas caparazones.',
+    keys:'Táctil o flechas', shape:'kart', color:'var(--lemon)'
+  },
+  {
+    slug:'anguera-superstars', title:'Anguera Superstars',
+    desc:'Fútbol 7 arcade con liga, temporadas y rivales. El más completo de la colección.',
+    keys:'Joystick táctil · pon el móvil en horizontal', shape:'ball', color:'var(--gum)'
+  },
+  {
+    slug:'futbol-retro', title:'Fútbol Retro 7v7',
+    desc:'Partido arcade en 3D con radar, joystick y disparo con medidor de potencia.',
+    keys:'Joystick táctil · pon el móvil en horizontal', shape:'ball', color:'var(--lime)'
+  }
+];
+
+const SHAPES = {
+  runner:`<svg viewBox="0 0 64 64" fill="none" stroke="#2B1A55" stroke-width="5" stroke-linejoin="round">
+    <rect x="10" y="22" width="30" height="30" rx="9" fill="#FFF6E5"/>
+    <circle cx="20" cy="35" r="3.4" fill="#2B1A55" stroke="none"/>
+    <circle cx="31" cy="35" r="3.4" fill="#2B1A55" stroke="none"/>
+    <path d="M46 20l10 6-10 6" stroke-linecap="round"/><path d="M46 38l10 6-10 6" stroke-linecap="round"/></svg>`,
+  tower:`<svg viewBox="0 0 64 64" fill="none" stroke="#2B1A55" stroke-width="5" stroke-linejoin="round">
+    <rect x="14" y="40" width="36" height="14" rx="5" fill="#FFF6E5"/>
+    <rect x="19" y="26" width="26" height="14" rx="5" fill="#FF8A3D"/>
+    <rect x="24" y="12" width="17" height="14" rx="5" fill="#3DE07A"/></svg>`,
+  fight:`<svg viewBox="0 0 64 64" fill="none" stroke="#2B1A55" stroke-width="5" stroke-linejoin="round">
+    <path d="M16 24a8 8 0 0 1 8-8h14a10 10 0 0 1 10 10v10a12 12 0 0 1-12 12H26a10 10 0 0 1-10-10z" fill="#FF8A3D"/>
+    <path d="M16 30h-3a5 5 0 0 0 0 10h3" fill="#FF8A3D"/><path d="M28 26v6M36 26v6" stroke-linecap="round"/></svg>`,
+  dance:`<svg viewBox="0 0 64 64" fill="none" stroke="#2B1A55" stroke-width="5" stroke-linejoin="round">
+    <path d="M26 46V16l20-5v30" stroke-linecap="round"/>
+    <ellipse cx="19" cy="47" rx="8" ry="6.5" fill="#9B5CFF"/><ellipse cx="39" cy="41" rx="8" ry="6.5" fill="#9B5CFF"/></svg>`,
+  kart:`<svg viewBox="0 0 64 64" fill="none" stroke="#2B1A55" stroke-width="5" stroke-linejoin="round">
+    <path d="M8 40v-6h10l7-10h16l5 10h10v6z" fill="#FFD53D"/>
+    <circle cx="19" cy="45" r="6" fill="#FFF6E5"/><circle cx="45" cy="45" r="6" fill="#FFF6E5"/></svg>`,
+  ball:`<svg viewBox="0 0 64 64" fill="none" stroke="#2B1A55" stroke-width="5" stroke-linejoin="round">
+    <circle cx="32" cy="32" r="21" fill="#FFF6E5"/>
+    <path d="M32 20l9 6.5-3.4 10.5h-11.2L23 26.5z" fill="#3DE07A"/>
+    <path d="M32 11v9M13.5 25l9.5 1.5M50.5 25L41 26.5M21 51l5.4-14M43 51l-5.4-14"/></svg>`,
+  farm:`<svg viewBox="0 0 64 64" fill="none" stroke="#2B1A55" stroke-width="5" stroke-linejoin="round">
+    <path d="M11 30 32 15l21 15v20a4 4 0 0 1-4 4H15a4 4 0 0 1-4-4z" fill="#FFF6E5"/>
+    <path d="M26 54V38h12v16" fill="#FF4D9D"/>
+    <path d="M32 8v7" stroke-linecap="round"/><circle cx="32" cy="6" r="3" fill="#FFD53D"/></svg>`,
+  orb:`<svg viewBox="0 0 64 64" fill="none" stroke="#2B1A55" stroke-width="5">
+    <circle cx="32" cy="32" r="20" fill="#FFF6E5"/><ellipse cx="32" cy="32" rx="20" ry="8"/></svg>`
+};
+
+document.getElementById('grid').innerHTML = GAMES.map(g=>`
+  <a class="card" href="games/${g.slug}.html">
+    <div class="cap" style="--accent:${g.color}">${SHAPES[g.shape]||SHAPES.orb}</div>
+    <div class="body">
+      <div class="name">${g.title}</div>
+      <div class="desc">${g.desc}</div>
+      <div class="keys">${g.keys}</div>
+    </div>
+  </a>`).join('');
+</script>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.164.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.164.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+const canvas = document.getElementById('stage');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true }); }
+catch (e) { canvas.style.display='none'; throw e; }
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(46, 1, .1, 300);
+camera.position.set(0, 2.4, 17);
+
+scene.add(new THREE.HemisphereLight(0xFFFFFF, 0x8A6BD8, 2.4));
+const sun = new THREE.DirectionalLight(0xFFFFFF, 2.1);
+sun.position.set(6, 12, 8);
+scene.add(sun);
+
+/* rampa de tres tonos: el sombreado sale plano, de dibujo animado */
+const steps = new Uint8Array([80, 80, 175, 175, 255, 255, 255, 255]);
+const ramp = new THREE.DataTexture(steps, steps.length, 1, THREE.RedFormat);
+ramp.minFilter = ramp.magFilter = THREE.NearestFilter;   // escalones duros, no degradado
+ramp.needsUpdate = true;
+
+const toon = c => new THREE.MeshToonMaterial({ color:c, gradientMap:ramp });
+const INK = new THREE.MeshBasicMaterial({ color:0x2B1A55, side:THREE.BackSide });
+
+/* contorno negro: una copia inflada del mismo cuerpo, vista por dentro */
+function outlined(geo, color, thickness = 1.07) {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(geo, toon(color)));
+  const line = new THREE.Mesh(geo, INK);
+  line.scale.setScalar(thickness);
+  g.add(line);
+  scene.add(g);
+  return g;
+}
+
+const CANDY = [0xFF4D9D, 0xFFD53D, 0x3DE07A, 0xFF8A3D, 0x9B5CFF, 0x3FB8FF];
+const rbox = (w,h,d,r=.34) => new RoundedBoxGeometry(w,h,d,4,r);
+
+/* plataformas flotantes */
+const floaters = [];
+const plan = [
+  [-9.5,-3.2,-4, 5.2,1.5,5.2, 0], [ 9.2,-4.4,-6, 6,1.6,6, 2],
+  [-7.5, 4.4,-9, 3.2,1.2,3.2, 3], [ 7.8, 3.6,-3, 2.6,1.1,2.6, 4],
+  [ 0.4,-6.6,-8, 7,1.6,7, 5],
+];
+for (const [x,y,z,w,h,d,ci] of plan) {
+  const g = outlined(rbox(w,h,d,.5), CANDY[ci]);
+  g.position.set(x,y,z);
+  floaters.push({ g, phase: Math.random()*6.28, amp: .3+Math.random()*.35, spin:(Math.random()-.5)*.0035 });
+}
+
+/* dados sueltos girando */
+for (let i = 0; i < 7; i++) {
+  const s = .8 + Math.random()*1.1;
+  const g = outlined(rbox(s,s,s,.22), CANDY[i % CANDY.length], 1.1);
+  g.position.set((Math.random()-.5)*26, (Math.random()-.5)*13, -12 - Math.random()*10);
+  floaters.push({ g, phase:Math.random()*6.28, amp:.5+Math.random()*.5, spin:.006+Math.random()*.01 });
+}
+
+/* personajes rechonchos, botando sobre las plataformas */
+function character(color) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(.62, .78, 6, 18), toon(color));
+  const bodyLine = new THREE.Mesh(body.geometry, INK); bodyLine.scale.setScalar(1.09);
+  g.add(body, bodyLine);
+  const eyeW = new THREE.MeshBasicMaterial({ color:0xFFFFFF });
+  const eyeB = new THREE.MeshBasicMaterial({ color:0x2B1A55 });
+  for (const sx of [-.26, .26]) {
+    const w = new THREE.Mesh(new THREE.SphereGeometry(.2, 14, 14), eyeW);
+    w.position.set(sx, .34, .5); w.scale.z = .5;
+    const b = new THREE.Mesh(new THREE.SphereGeometry(.1, 12, 12), eyeB);
+    b.position.set(sx, .34, .62); b.scale.z = .5;
+    g.add(w, b);
+  }
+  for (const sx of [-.34, .34]) {
+    const foot = new THREE.Mesh(rbox(.34,.24,.5,.1), toon(0x2B1A55));
+    foot.position.set(sx, -.82, .12);
+    g.add(foot);
+  }
+  scene.add(g);
+  return g;
+}
+
+const cast = [
+  { g: character(0xFF4D9D), base:new THREE.Vector3(-9.5,-1.1,-4), t:0,   sp:.055 },
+  { g: character(0x3DE07A), base:new THREE.Vector3( 9.2,-2.2,-6), t:2.1, sp:.045 },
+  { g: character(0xFFD53D), base:new THREE.Vector3( 0.4,-4.4,-8), t:4.0, sp:.062 },
+];
+
+/* confeti */
+const confetti = [];
+const confGeo = new THREE.PlaneGeometry(.3, .42);
+for (let i = 0; i < 90; i++) {
+  const m = new THREE.Mesh(confGeo, new THREE.MeshBasicMaterial({
+    color: CANDY[i % CANDY.length], side: THREE.DoubleSide
+  }));
+  m.position.set((Math.random()-.5)*40, Math.random()*34-10, -6 - Math.random()*16);
+  m.rotation.set(Math.random()*6, Math.random()*6, Math.random()*6);
+  m.userData = { vy:.026+Math.random()*.045, rx:(Math.random()-.5)*.09, rz:(Math.random()-.5)*.09 };
+  scene.add(m);
+  confetti.push(m);
+}
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+let mx = 0, my = 0, cx = 0, cy = 0, scrollY = 0;
+addEventListener('pointermove', e => {
+  mx = (e.clientX / innerWidth - .5) * 2.6;
+  my = (e.clientY / innerHeight - .5) * 1.4;
+});
+addEventListener('scroll', () => { scrollY = window.scrollY; }, { passive:true });
+
+let t = 0;
+function frame() {
+  requestAnimationFrame(frame);
+  t += .016;
+
+  for (const f of floaters) {
+    f.g.position.y += Math.sin(t * 1.1 + f.phase) * .006 * f.amp;
+    f.g.rotation.y += f.spin;
+    f.g.rotation.x += f.spin * .4;
+  }
+
+  for (const c of cast) {
+    c.t += c.sp;
+    const hop = Math.abs(Math.sin(c.t)) * 1.5;
+    c.g.position.set(c.base.x, c.base.y + hop, c.base.z);
+    c.g.rotation.y = Math.sin(c.t * .5) * .6;
+    const squash = 1 + Math.cos(c.t) * .08;
+    c.g.scale.set(2 - squash, squash, 2 - squash);
+  }
+
+  for (const m of confetti) {
+    m.position.y -= m.userData.vy;
+    m.rotation.x += m.userData.rx;
+    m.rotation.z += m.userData.rz;
+    if (m.position.y < -18) { m.position.y = 22; m.position.x = (Math.random()-.5)*40; }
+  }
+
+  cx += (mx - cx) * .045;
+  cy += (my - cy) * .045;
+  camera.position.x = cx;
+  camera.position.y = 2.4 - cy - scrollY * .004;
+  camera.lookAt(0, -scrollY * .004, 0);
+
+  renderer.render(scene, camera);
+}
+
+if (reduced) { renderer.render(scene, camera); } else frame();
+</script>
+</body>
+</html>
